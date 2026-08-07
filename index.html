@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sudoku as a Constraint Satisfaction Problem — Demo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --base:#EAEEF3;
+    --panel:#FFFFFF;
+    --ink:#152230;
+    --muted:#66788C;
+    --line:#D8E0E9;
+    --line-strong:#152230;
+    --brand:#2C3E66;
+    --brand-tint:#EAF0FB;
+    --given:#152230;
+    --solved:#0E7C66;
+    --active:#1D6FE0;
+    --active-tint:#DCEBFF;
+    --back:#E4572E;
+    --back-tint:#FDE4DC;
+    --cand:#9AAABC;
+    --mrv-ring:#1D6FE0;
+    --shadow:0 1px 2px rgba(21,34,48,.06),0 8px 24px rgba(21,34,48,.06);
+    --radius:14px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    font-family:"Inter",system-ui,sans-serif;
+    background:
+      radial-gradient(1200px 600px at 80% -10%, #f4f7fb 0%, rgba(244,247,251,0) 60%),
+      var(--base);
+    color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+    padding:28px 20px 56px;
+    line-height:1.45;
+  }
+  .wrap{max-width:1060px;margin:0 auto}
+
+  header.hd{margin-bottom:22px}
+  .eyebrow{
+    font-family:"IBM Plex Mono",monospace;font-size:12px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--muted);display:flex;gap:10px;align-items:center;flex-wrap:wrap;
+  }
+  .eyebrow .dot{width:5px;height:5px;border-radius:50%;background:var(--brand);display:inline-block}
+  h1{
+    font-family:"Space Grotesk",sans-serif;font-weight:700;
+    font-size:clamp(26px,4.2vw,40px);line-height:1.05;letter-spacing:-.02em;
+    margin:8px 0 6px;
+  }
+  h1 em{font-style:normal;color:var(--brand)}
+  .sub{color:var(--muted);font-size:15px;max-width:60ch}
+
+  .layout{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:22px;margin-top:22px;align-items:start}
+  @media(max-width:860px){.layout{grid-template-columns:1fr}}
+
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+  .board-card{padding:20px}
+
+  /* ---- Grid ---- */
+  .board{
+    --g:2px;
+    display:grid;grid-template-columns:repeat(9,1fr);grid-template-rows:repeat(9,1fr);
+    gap:var(--g);background:var(--line-strong);
+    border:3px solid var(--line-strong);border-radius:10px;overflow:hidden;
+    aspect-ratio:1/1;width:100%;max-width:520px;margin:0 auto;
+    user-select:none;
+  }
+  .cell{
+    position:relative;background:var(--panel);display:flex;align-items:center;justify-content:center;
+    cursor:pointer;transition:background .18s ease;
+  }
+  /* thick 3x3 separators via margins on the gap grid */
+  .cell.br{box-shadow:2px 0 0 0 var(--line-strong)}
+  .cell.bb{box-shadow:0 2px 0 0 var(--line-strong)}
+  .cell.br.bb{box-shadow:2px 0 0 0 var(--line-strong),0 2px 0 0 var(--line-strong)}
+  .val{font-family:"IBM Plex Mono",monospace;font-weight:600;font-size:clamp(18px,4.4vw,27px);line-height:1}
+  .cell.given .val{color:var(--given)}
+  .cell.solved .val{color:var(--solved)}
+  .cell.active{background:var(--active-tint)}
+  .cell.active .val{color:var(--active)}
+  .cell.back{background:var(--back-tint)}
+  .cell.back .val{color:var(--back)}
+  .cell.sel{outline:3px solid var(--mrv-ring);outline-offset:-3px;z-index:2}
+  .cell.editing{outline:3px solid var(--brand);outline-offset:-3px;z-index:3;background:var(--brand-tint)}
+  .cell.conflict{background:var(--back-tint)}
+  .cell.conflict .val{color:var(--back)}
+  /* candidate pencil marks */
+  .cands{position:absolute;inset:0;display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);
+    padding:2px;pointer-events:none}
+  .cands span{font-family:"IBM Plex Mono",monospace;font-size:clamp(7px,1.5vw,10px);color:var(--cand);
+    display:flex;align-items:center;justify-content:center;line-height:1}
+  .cell.sel .cands span{color:var(--active);font-weight:600}
+
+  .legend{display:flex;flex-wrap:wrap;gap:12px 16px;margin-top:16px;font-size:12.5px;color:var(--muted)}
+  .legend .k{display:inline-flex;align-items:center;gap:6px}
+  .sw{width:12px;height:12px;border-radius:3px;border:1px solid var(--line)}
+  .sw.given{background:#fff;position:relative}
+  .sw.given::after{content:"7";position:absolute;inset:0;font:600 9px/12px "IBM Plex Mono";color:var(--given);text-align:center}
+  .sw.solved{background:#fff}
+  .sw.solved::after{content:"5";position:absolute;inset:0;font:600 9px/12px "IBM Plex Mono";color:var(--solved);text-align:center;display:block}
+  .sw.active{background:var(--active-tint);border-color:var(--active)}
+  .sw.back{background:var(--back-tint);border-color:var(--back)}
+  .sw.mrv{background:#fff;border:2px solid var(--mrv-ring)}
+
+  .status{margin-top:14px;min-height:22px;font-family:"IBM Plex Mono",monospace;font-size:13px;color:var(--ink)}
+  .status .tag{color:var(--muted)}
+  .status.err{color:var(--back)}
+  .status.ok{color:var(--solved)}
+
+  /* ---- Controls ---- */
+  .stack{display:flex;flex-direction:column;gap:16px}
+  .panel{padding:16px}
+  .panel h2{font-family:"Space Grotesk",sans-serif;font-size:12px;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--muted);margin:0 0 12px;font-weight:600}
+  .row{display:flex;gap:8px;flex-wrap:wrap}
+  button{
+    font-family:"Inter",sans-serif;font-size:13.5px;font-weight:500;color:var(--ink);
+    background:#fff;border:1px solid var(--line);border-radius:9px;padding:9px 12px;cursor:pointer;
+    transition:all .14s ease;flex:1 1 auto;white-space:nowrap;
+  }
+  button:hover{border-color:var(--brand);background:var(--brand-tint)}
+  button:active{transform:translateY(1px)}
+  button:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+  button.primary{background:var(--brand);color:#fff;border-color:var(--brand)}
+  button.primary:hover{filter:brightness(1.08);background:var(--brand)}
+  button:disabled{opacity:.45;cursor:not-allowed;transform:none}
+  .seg{display:flex;gap:0;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+  .seg button{border:0;border-radius:0;border-right:1px solid var(--line);flex:1}
+  .seg button:last-child{border-right:0}
+
+  .speed{display:flex;align-items:center;gap:10px;margin-top:4px}
+  .speed label{font-size:12px;color:var(--muted);white-space:nowrap}
+  input[type=range]{flex:1;accent-color:var(--brand)}
+
+  /* ---- Stats ---- */
+  .stats{padding:16px}
+  .stats table{width:100%;border-collapse:collapse;font-size:13px}
+  .stats th,.stats td{text-align:right;padding:8px 6px;border-bottom:1px solid var(--line)}
+  .stats th:first-child,.stats td:first-child{text-align:left;color:var(--muted);font-weight:500}
+  .stats thead th{font-family:"Space Grotesk",sans-serif;font-weight:600;color:var(--ink);font-size:12px;
+    text-transform:uppercase;letter-spacing:.04em}
+  .stats td.num{font-family:"IBM Plex Mono",monospace;font-weight:500}
+  .stats .win{color:var(--solved)}
+  .stats .cap{color:var(--back)}
+  .factor{margin-top:12px;font-size:13px;color:var(--muted);font-family:"IBM Plex Mono",monospace}
+  .factor b{color:var(--brand);font-weight:600}
+
+  .hint{font-size:12px;color:var(--muted);margin-top:10px;line-height:1.5}
+  .kbd{font-family:"IBM Plex Mono",monospace;font-size:11px;background:var(--brand-tint);border:1px solid var(--line);
+    border-radius:5px;padding:1px 5px;color:var(--brand)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="hd">
+    <div class="eyebrow"><span class="dot"></span> Group 3 · Constraint Satisfaction <span class="dot"></span> Live Demo</div>
+    <h1>Solving Sudoku as a <em>constraint satisfaction problem</em></h1>
+    <p class="sub">81 variables, domains 1–9, all-different across every row, column, and 3×3 box. Watch backtracking search narrow the domains — and see how the MRV heuristic with constraint propagation beats plain backtracking.</p>
+  </header>
+
+  <div class="layout">
+    <!-- BOARD -->
+    <section class="card board-card">
+      <div class="board" id="board"></div>
+
+      <div class="legend">
+        <span class="k"><span class="sw given"></span> Given clue</span>
+        <span class="k"><span class="sw solved"></span> Solver fill</span>
+        <span class="k"><span class="sw active"></span> Trying a value</span>
+        <span class="k"><span class="sw back"></span> Backtrack</span>
+        <span class="k"><span class="sw mrv"></span> MRV cell (fewest options)</span>
+      </div>
+
+      <div class="status" id="status"><span class="tag">ready ·</span> load a preset or type digits into cells, then Solve</div>
+    </section>
+
+    <!-- CONTROLS -->
+    <div class="stack">
+      <section class="card panel">
+        <h2>Puzzles</h2>
+        <div class="row" style="margin-bottom:8px">
+          <button data-preset="easy">Easy</button>
+          <button data-preset="escargot">AI Escargot</button>
+          <button data-preset="extreme">17-clue</button>
+        </div>
+        <div class="row">
+          <button data-gen="45">Generate easy</button>
+          <button data-gen="34">Generate medium</button>
+          <button data-gen="26">Generate hard</button>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <button id="clearBtn">Clear grid</button>
+        </div>
+      </section>
+
+      <section class="card panel">
+        <h2>Solve</h2>
+        <div class="row" style="margin-bottom:10px">
+          <button class="primary" id="playBtn">Solve — watch it</button>
+          <button id="instantBtn">Solve instantly</button>
+        </div>
+        <div class="seg" style="margin-bottom:6px">
+          <button id="stepBtn">Step ▸</button>
+          <button id="pauseBtn" disabled>Pause</button>
+          <button id="resetBtn">Reset</button>
+        </div>
+        <div class="speed">
+          <label>Speed</label>
+          <input type="range" id="speed" min="1" max="100" value="55">
+        </div>
+        <div class="hint">Click a cell and press <span class="kbd">1</span>–<span class="kbd">9</span> to edit, <span class="kbd">0</span> / <span class="kbd">⌫</span> to clear.</div>
+      </section>
+
+      <section class="card stats">
+        <h2 style="font-family:'Space Grotesk';font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:0 0 12px;font-weight:600">Smart vs. plain backtracking</h2>
+        <table>
+          <thead><tr><th>Metric</th><th>Plain</th><th>Smart</th></tr></thead>
+          <tbody id="statsBody">
+            <tr><td>Backtracks</td><td class="num" id="s_pn_bt">—</td><td class="num" id="s_sm_bt">—</td></tr>
+            <tr><td>Search nodes</td><td class="num" id="s_pn_nd">—</td><td class="num" id="s_sm_nd">—</td></tr>
+            <tr><td>Time</td><td class="num" id="s_pn_ms">—</td><td class="num" id="s_sm_ms">—</td></tr>
+          </tbody>
+        </table>
+        <div class="factor" id="factor">Run <b>Solve instantly</b> to benchmark both solvers on the current grid.</div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   Sudoku CSP core — validated in Node before shipping.
+   Smart solver: backtracking + forward-checking constraint
+   propagation + Minimum Remaining Values (MRV) heuristic.
+   Plain solver: naive row-major backtracking (baseline).
+   ============================================================ */
+const ALL = 0x1FF;
+const PEERS = (()=>{
+  const p = Array.from({length:81},()=>new Set());
+  for(let i=0;i<81;i++){
+    const r=(i/9)|0, c=i%9, br=((r/3)|0)*3, bc=((c/3)|0)*3;
+    for(let k=0;k<9;k++){ if(r*9+k!==i)p[i].add(r*9+k); if(k*9+c!==i)p[i].add(k*9+c); }
+    for(let dr=0;dr<3;dr++)for(let dc=0;dc<3;dc++){const cell=(br+dr)*9+bc+dc; if(cell!==i)p[i].add(cell);}
+  }
+  return p.map(s=>[...s]);
+})();
+const bitcount = m=>{let c=0;while(m){m&=m-1;c++;}return c;};
+
+function parse(str){
+  const s=(str||'').replace(/[^0-9.]/g,''); const b=new Array(81).fill(0);
+  for(let i=0;i<81;i++){const ch=s[i]; b[i]=(!ch||ch==='.'||ch==='0')?0:+ch;}
+  return b;
+}
+function conflictCells(b){
+  const bad=new Set();
+  for(let i=0;i<81;i++) if(b[i]!==0) for(const pz of PEERS[i]) if(b[pz]===b[i]) {bad.add(i);bad.add(pz);}
+  return bad;
+}
+
+/* plain baseline — with a node cap so the browser never hangs */
+function solveNaive(board, CAP=3000000){
+  const b=board.slice(); let nodes=0,back=0,capped=false; const t0=performance.now();
+  const valid=(idx,v)=>{
+    const r=(idx/9)|0,c=idx%9;
+    for(let k=0;k<9;k++){ if(b[r*9+k]===v||b[k*9+c]===v) return false; }
+    const br=((r/3)|0)*3, bc=((c/3)|0)*3;
+    for(let dr=0;dr<3;dr++)for(let dc=0;dc<3;dc++) if(b[(br+dr)*9+bc+dc]===v) return false;
+    return true;
+  };
+  const bt=()=>{
+    if(capped) return false;
+    if(++nodes>CAP){capped=true;return false;}
+    let idx=-1; for(let i=0;i<81;i++) if(b[i]===0){idx=i;break;}
+    if(idx===-1) return true;
+    for(let v=1;v<=9;v++) if(valid(idx,v)){ b[idx]=v; if(bt())return true; b[idx]=0; }
+    back++; return false;
+  };
+  const solved=bt();
+  return {solved,board:b,nodes,backtracks:back,timeMs:performance.now()-t0,capped};
+}
+
+/* smart solver; trace=true records animation events */
+function solveSmart(board,{randomize=false,trace=false}={}){
+  const val=board.slice(), cand=new Array(81);
+  for(let i=0;i<81;i++){
+    if(val[i]!==0){cand[i]=0;continue;}
+    let m=ALL; for(const pz of PEERS[i]) if(val[pz]!==0) m&=~(1<<(val[pz]-1)); cand[i]=m;
+  }
+  let nodes=0,back=0; const ev=trace?[]:null; const t0=performance.now();
+  const CAPEV=400000;
+  const selectMRV=()=>{let best=-1,bc=10;for(let i=0;i<81;i++)if(val[i]===0){const c=bitcount(cand[i]);if(c<bc){bc=c;best=i;if(c<=1)break;}}return best;};
+  const bt=()=>{
+    nodes++;
+    const idx=selectMRV();
+    if(idx===-1) return true;
+    let mask=cand[idx];
+    if(trace && ev.length<CAPEV) ev.push({t:'sel',i:idx});
+    if(mask===0) return false;
+    for(let v=1;v<=9;v++){
+      if(!(mask&(1<<(v-1)))) continue;
+      val[idx]=v; const bit=1<<(v-1); const removed=[]; let ok=true;
+      if(trace && ev.length<CAPEV) ev.push({t:'place',i:idx,v});
+      for(const pz of PEERS[idx]) if(val[pz]===0 && (cand[pz]&bit)){ cand[pz]&=~bit; removed.push(pz); if(cand[pz]===0) ok=false; }
+      const saved=cand[idx]; cand[idx]=0;
+      if(ok && bt()) return true;
+      val[idx]=0; cand[idx]=saved; for(const pz of removed) cand[pz]|=bit;
+      if(trace && ev.length<CAPEV) ev.push({t:'undo',i:idx});
+    }
+    back++; return false;
+  };
+  const solved=bt();
+  return {solved,board:val,nodes,backtracks:back,timeMs:performance.now()-t0,events:ev};
+}
+
+function countSolutions(board,limit=2){
+  const val=board.slice(),cand=new Array(81);
+  for(let i=0;i<81;i++){ if(val[i]!==0){cand[i]=0;continue;} let m=ALL; for(const pz of PEERS[i]) if(val[pz]!==0) m&=~(1<<(val[pz]-1)); cand[i]=m; }
+  let count=0;
+  const sel=()=>{let b=-1,bc=10;for(let i=0;i<81;i++)if(val[i]===0){const c=bitcount(cand[i]);if(c<bc){bc=c;b=i;if(c<=1)break;}}return b;};
+  const bt=()=>{
+    if(count>=limit) return;
+    const idx=sel(); if(idx===-1){count++;return;}
+    const mask=cand[idx];
+    for(let v=1;v<=9;v++){ if(!(mask&(1<<(v-1))))continue;
+      val[idx]=v; const bit=1<<(v-1); const rm=[]; let ok=true;
+      for(const pz of PEERS[idx]) if(val[pz]===0&&(cand[pz]&bit)){cand[pz]&=~bit;rm.push(pz);if(cand[pz]===0)ok=false;}
+      const s=cand[idx];cand[idx]=0; if(ok)bt(); val[idx]=0;cand[idx]=s; for(const pz of rm)cand[pz]|=bit;
+      if(count>=limit)return;
+    }
+  };
+  bt(); return count;
+}
+
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=(Math.random()*(i+1))|0;[a[i],a[j]]=[a[j],a[i]];}return a;}
+function generate(target){
+  const full=solveSmart(new Array(81).fill(0),{randomize:true}).board;
+  const puz=full.slice(); let givens=81;
+  for(const pos of shuffle([...Array(81).keys()])){
+    if(givens<=target) break;
+    const s=puz[pos]; if(s===0) continue;
+    puz[pos]=0;
+    if(countSolutions(puz,2)!==1) puz[pos]=s; else givens--;
+  }
+  return {puzzle:puz,givens};
+}
+
+const PRESETS={
+  easy:     "530070000600195000098000060800060003400803001700020006060000280000419005000080079",
+  escargot: "100007090030020008009600500005300900010080002600004000300000010040000007007000300",
+  extreme:  "000000010400000000020000000000050407008000300001090000300400200050100000000806000",
+};
+
+/* ============================================================
+   UI
+   ============================================================ */
+const boardEl=document.getElementById('board');
+const statusEl=document.getElementById('status');
+const speedEl=document.getElementById('speed');
+const cells=[];
+let givenMask=new Array(81).fill(false);   // true = clue
+let cur=new Array(81).fill(0);             // displayed values
+let editIdx=-1;
+
+// build cells
+for(let i=0;i<81;i++){
+  const d=document.createElement('div');
+  d.className='cell';
+  const r=(i/9)|0,c=i%9;
+  if(c===2||c===5) d.classList.add('br');
+  if(r===2||r===5) d.classList.add('bb');
+  const v=document.createElement('div'); v.className='val';
+  const cd=document.createElement('div'); cd.className='cands';
+  for(let k=0;k<9;k++){const sp=document.createElement('span');cd.appendChild(sp);}
+  d.appendChild(cd); d.appendChild(v);
+  d.addEventListener('click',()=>{ if(playing)return; editIdx=i; render(); });
+  boardEl.appendChild(d);
+  cells.push({el:d,val:v,cands:cd.children});
+}
+
+function candMaskFor(val,idx){
+  if(val[idx]!==0) return 0;
+  let m=ALL; for(const pz of PEERS[idx]) if(val[pz]!==0) m&=~(1<<(val[pz]-1));
+  return m;
+}
+
+function render(opts={}){
+  const {sel=-1,active=-1,back=-1,fromSolver=null}=opts;
+  const conf=conflictCells(cur);
+  for(let i=0;i<81;i++){
+    const cell=cells[i];
+    cell.el.className='cell';
+    const r=(i/9)|0,c=i%9;
+    if(c===2||c===5) cell.el.classList.add('br');
+    if(r===2||r===5) cell.el.classList.add('bb');
+
+    const v=cur[i];
+    cell.val.textContent = v||'';
+    // candidate marks for empty cells
+    const showCands = v===0;
+    const mask = showCands ? candMaskFor(cur,i) : 0;
+    for(let k=0;k<9;k++) cell.cands[k].textContent = (showCands && (mask&(1<<k))) ? (k+1) : '';
+
+    if(v!==0){
+      cell.el.classList.add(givenMask[i]?'given':'solved');
+    }
+    if(conf.has(i)) cell.el.classList.add('conflict');
+    if(i===sel) cell.el.classList.add('sel');
+    if(i===active) cell.el.classList.add('active');
+    if(i===back) cell.el.classList.add('back');
+    if(i===editIdx && !playing) cell.el.classList.add('editing');
+  }
+}
+
+function setStatus(html,kind=''){ statusEl.className='status '+kind; statusEl.innerHTML=html; }
+const fmt=n=> n>=1000000? (n/1e6).toFixed(1)+'M' : n>=1000? (n/1000).toFixed(1)+'k' : (''+n);
+const fmtMs=ms=> ms<1? ms.toFixed(2)+' ms' : ms<1000? ms.toFixed(1)+' ms' : (ms/1000).toFixed(2)+' s';
+
+function loadBoard(arr,label){
+  stopPlayback();
+  cur=arr.slice();
+  givenMask=cur.map(v=>v!==0);
+  editIdx=-1;
+  clearStats();
+  render();
+  const g=cur.filter(x=>x).length;
+  const c=conflictCells(cur);
+  if(c.size) setStatus(`<span class="tag">loaded ·</span> ${label} — ${g} clues · <b>invalid: duplicate values</b>`,'err');
+  else setStatus(`<span class="tag">loaded ·</span> ${label} — ${g} clues · ready to solve`);
+}
+
+/* ---- editing ---- */
+document.addEventListener('keydown',e=>{
+  if(playing||editIdx<0) return;
+  if(e.key>='1'&&e.key<='9'){ cur[editIdx]=+e.key; givenMask[editIdx]=true; afterEdit(); }
+  else if(e.key==='0'||e.key==='Backspace'||e.key==='Delete'){ cur[editIdx]=0; givenMask[editIdx]=false; afterEdit(); }
+  else if(e.key==='ArrowRight'){editIdx=(editIdx+1)%81;render();}
+  else if(e.key==='ArrowLeft'){editIdx=(editIdx+80)%81;render();}
+  else if(e.key==='ArrowDown'){editIdx=(editIdx+9)%81;render();}
+  else if(e.key==='ArrowUp'){editIdx=(editIdx+72)%81;render();}
+});
+function afterEdit(){
+  clearStats();
+  render();
+  const c=conflictCells(cur);
+  if(c.size) setStatus(`<span class="tag">edited ·</span> <b>invalid: a digit repeats in a row, column, or box</b>`,'err');
+  else setStatus(`<span class="tag">edited ·</span> ${cur.filter(x=>x).length} clues`);
+}
+
+/* ---- stats / benchmark ---- */
+function clearStats(){
+  ['s_pn_bt','s_sm_bt','s_pn_nd','s_sm_nd','s_pn_ms','s_sm_ms'].forEach(id=>{
+    const el=document.getElementById(id); el.textContent='—'; el.className='num';
+  });
+  document.getElementById('factor').innerHTML='Run <b>Solve instantly</b> to benchmark both solvers on the current grid.';
+}
+function benchmark(){
+  const base=cur.map((v,i)=>givenMask[i]?v:0);
+  const smart=solveSmart(base);
+  const naive=solveNaive(base);
+  const set=(id,val,cls='')=>{const el=document.getElementById(id);el.textContent=val;el.className='num '+cls;};
+  set('s_sm_bt',fmt(smart.backtracks),'win'); set('s_pn_bt',naive.capped?'>'+fmt(naive.backtracks):fmt(naive.backtracks),naive.capped?'cap':'');
+  set('s_sm_nd',fmt(smart.nodes),'win'); set('s_pn_nd',(naive.capped?'>':'')+fmt(naive.nodes),naive.capped?'cap':'');
+  set('s_sm_ms',fmtMs(smart.timeMs),'win'); set('s_pn_ms',(naive.capped?'>':'')+fmtMs(naive.timeMs),naive.capped?'cap':'');
+  const f=document.getElementById('factor');
+  if(naive.capped){
+    f.innerHTML=`Plain backtracking hit its <b>${fmt(naive.nodes)}-node cap</b> and gave up — the smart solver finished in <b>${fmtMs(smart.timeMs)}</b>.`;
+  } else if(smart.backtracks===0){
+    f.innerHTML=`Smart solver used <b>0 backtracks</b> — solved by pure constraint propagation. Plain solver needed <b>${fmt(naive.backtracks)}</b>.`;
+  } else {
+    const ratio=naive.backtracks/Math.max(1,smart.backtracks);
+    f.innerHTML=`MRV + propagation cut backtracks by <b>${ratio.toFixed(0)}×</b> (${fmt(naive.backtracks)} → ${fmt(smart.backtracks)}).`;
+  }
+  return {smart,naive};
+}
+
+/* ---- solve + animation ---- */
+let events=[],evIdx=0,playing=false,timer=null,solutionBoard=null;
+
+function prepareSolve(){
+  stopPlayback();
+  editIdx=-1;
+  const base=cur.map((v,i)=>givenMask[i]?v:0);
+  cur=base.slice(); render();
+  const conf=conflictCells(base);
+  if(conf.size){ setStatus('<span class="tag">error ·</span> <b>invalid puzzle — a clue repeats in a row, column, or box</b>','err'); return null; }
+  const nsol=countSolutions(base,2);
+  if(nsol===0){ setStatus('<span class="tag">error ·</span> <b>no solution — these clues cannot be completed</b>','err'); return null; }
+  const res=solveSmart(base,{trace:true});
+  solutionBoard=res.board.slice();
+  events=res.events; evIdx=0;
+  return {res,nsol};
+}
+
+function applyEvent(e){
+  if(e.t==='place'){ cur[e.i]=e.v; givenMask[e.i]=false; render({sel:-1,active:e.i}); }
+  else if(e.t==='undo'){ cur[e.i]=0; render({sel:-1,back:e.i}); }
+  else if(e.t==='sel'){ render({sel:e.i}); }
+}
+
+function stepOnce(){
+  if(evIdx>=events.length){ finishSolve(); return false; }
+  applyEvent(events[evIdx++]);
+  return true;
+}
+
+function delayFromSpeed(){ const s=+speedEl.value; return Math.max(0, 210 - s*2); }
+
+function play(){
+  const info=(events.length&&evIdx>0)?true:prepareSolve();
+  if(!info) return;
+  playing=true;
+  document.getElementById('pauseBtn').disabled=false;
+  document.getElementById('playBtn').disabled=true;
+  setStatus('<span class="tag">solving ·</span> MRV picks the most-constrained cell; propagation prunes candidates');
+  const tick=()=>{
+    if(!playing) return;
+    const d=delayFromSpeed();
+    const batch=d<8?Math.max(1,Math.round((8-d)*3)+1):1; // fast speeds apply several events per frame
+    let alive=true;
+    for(let k=0;k<batch&&alive;k++) alive=stepOnce();
+    if(!alive) return;
+    timer=setTimeout(tick,d);
+  };
+  tick();
+}
+function finishSolve(){
+  playing=false;
+  clearTimeout(timer);
+  document.getElementById('pauseBtn').disabled=true;
+  document.getElementById('playBtn').disabled=false;
+  cur=solutionBoard.slice();
+  render();
+  const b=benchmark();
+  setStatus(`<span class="tag">solved ·</span> complete & valid — smart solver: <b>${b.smart.backtracks}</b> backtracks, <b>${fmtMs(b.smart.timeMs)}</b>`,'ok');
+}
+function stopPlayback(){ playing=false; clearTimeout(timer); document.getElementById('pauseBtn').disabled=true; document.getElementById('playBtn').disabled=false; }
+
+/* ---- buttons ---- */
+document.querySelectorAll('[data-preset]').forEach(b=>b.addEventListener('click',()=>{
+  const k=b.dataset.preset; const names={easy:'Easy puzzle',escargot:'AI Escargot',extreme:'17-clue minimal'};
+  loadBoard(parse(PRESETS[k]),names[k]);
+}));
+document.querySelectorAll('[data-gen]').forEach(b=>b.addEventListener('click',()=>{
+  const t=+b.dataset.gen; setStatus('<span class="tag">generating ·</span> digging cells while checking for a unique solution…');
+  setTimeout(()=>{ const g=generate(t); const lbl=t>=45?'Generated easy':t>=34?'Generated medium':'Generated hard';
+    loadBoard(g.puzzle,`${lbl} (${g.givens} clues)`); },20);
+}));
+document.getElementById('clearBtn').addEventListener('click',()=>loadBoard(new Array(81).fill(0),'Empty grid'));
+document.getElementById('playBtn').addEventListener('click',play);
+document.getElementById('pauseBtn').addEventListener('click',()=>{
+  playing=false; clearTimeout(timer);
+  document.getElementById('pauseBtn').disabled=true; document.getElementById('playBtn').disabled=false;
+  setStatus('<span class="tag">paused ·</span> Step to advance one move, or Solve to resume');
+});
+document.getElementById('stepBtn').addEventListener('click',()=>{
+  if(!events.length||evIdx===0){ if(!prepareSolve())return; }
+  stopPlayback();
+  if(!stepOnce()) return;
+  const e=events[evIdx-1];
+  if(e.t==='sel'){ const n=bitcount(candMaskFor(cur,e.i)); const r=(e.i/9|0)+1,c=e.i%9+1;
+    setStatus(`<span class="tag">MRV ·</span> pick R${r}C${c} — only <b>${n}</b> candidate${n===1?'':'s'} left`); }
+  else if(e.t==='place'){ const r=(e.i/9|0)+1,c=e.i%9+1; setStatus(`<span class="tag">assign ·</span> R${r}C${c} = <b>${e.v}</b>, prune peers`); }
+  else if(e.t==='undo'){ const r=(e.i/9|0)+1,c=e.i%9+1; setStatus(`<span class="tag">backtrack ·</span> R${r}C${c} dead end — undo & try next`,'err'); }
+});
+document.getElementById('resetBtn').addEventListener('click',()=>{
+  stopPlayback();
+  cur=cur.map((v,i)=>givenMask[i]?v:0);
+  events=[];evIdx=0;render();
+  setStatus('<span class="tag">reset ·</span> back to clues only');
+});
+document.getElementById('instantBtn').addEventListener('click',()=>{
+  const info=prepareSolve(); if(!info) return;
+  cur=solutionBoard.slice(); render();
+  const b=benchmark();
+  const extra = info.nsol>1 ? ' · <b>note: multiple solutions</b>' : '';
+  setStatus(`<span class="tag">solved ·</span> complete & valid — <b>${b.smart.backtracks}</b> backtracks in <b>${fmtMs(b.smart.timeMs)}</b>${extra}`, info.nsol>1?'':'ok');
+});
+
+/* boot */
+loadBoard(parse(PRESETS.escargot),'AI Escargot');
+</script>
+</body>
+</html>
