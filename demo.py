@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 demo.py — run the Sudoku CSP project as a live demo.
 
@@ -21,9 +20,7 @@ import time
 
 import sudoku as s
 
-# --------------------------------------------------------------------------- #
-# ANSI helpers
-# --------------------------------------------------------------------------- #
+
 USE_COLOR = sys.stdout.isatty()
 
 
@@ -39,9 +36,9 @@ GREEN = lambda t: _c("32", t)
 RED = lambda t: _c("1;31", t)
 CYAN = lambda t: _c("36", t)
 YELLOW = lambda t: _c("1;33", t)
-INV_BLUE = lambda t: _c("44;97", t)     # placed cell
-INV_RED = lambda t: _c("41;97", t)      # backtracking cell
-INV_YEL = lambda t: _c("43;30", t)      # MRV-selected cell
+INV_BLUE = lambda t: _c("44;97", t)
+INV_RED = lambda t: _c("41;97", t)
+INV_YEL = lambda t: _c("43;30", t)
 
 
 def resolve(arg: str) -> list[int]:
@@ -50,9 +47,6 @@ def resolve(arg: str) -> list[int]:
     return s.parse(arg)
 
 
-# --------------------------------------------------------------------------- #
-# Colored grid rendering (fixed 13 lines)
-# --------------------------------------------------------------------------- #
 def render(board, givens_mask, sel=-1, active=-1, back=-1):
     out = []
     for r in range(9):
@@ -83,12 +77,9 @@ def render(board, givens_mask, sel=-1, active=-1, back=-1):
     return "\n".join(out)
 
 
-GRID_LINES = 13  # 9 rows + 4 separators
+GRID_LINES = 13
 
 
-# --------------------------------------------------------------------------- #
-# Animated solve
-# --------------------------------------------------------------------------- #
 def animate(board, speed=0.03):
     givens_mask = [v != 0 for v in board]
     conf = s.conflicts(board)
@@ -106,7 +97,7 @@ def animate(board, speed=0.03):
           DIM("givens=bold  ") + GREEN("placed=green  ") +
           INV_YEL(" MRV ") + " " + INV_BLUE(" try ") + " " + INV_RED(" undo "))
     print(render(work, givens_mask))
-    sys.stdout.write(f"\033[{GRID_LINES}A")  # cursor back to top of grid
+    sys.stdout.write(f"\033[{GRID_LINES}A")
 
     for kind, *rest in events:
         sel = active = back = -1
@@ -125,7 +116,7 @@ def animate(board, speed=0.03):
         sys.stdout.flush()
         time.sleep(speed)
 
-    # final frame, no highlight
+
     solved, st, _ = s.solve_smart(board)
     sys.stdout.write(render(solved, givens_mask) + "\n")
     print()
@@ -134,9 +125,6 @@ def animate(board, speed=0.03):
           f"time={st.time_ms:.2f} ms")
 
 
-# --------------------------------------------------------------------------- #
-# One-shot solve
-# --------------------------------------------------------------------------- #
 def solve_one(board):
     givens_mask = [v != 0 for v in board]
     print(BOLD("Puzzle") + DIM(f"   ({sum(givens_mask)} clues)"))
@@ -157,19 +145,15 @@ def solve_one(board):
           f"nodes={st.nodes}  time={st.time_ms:.2f} ms{note}")
 
 
-# --------------------------------------------------------------------------- #
-# Comparison table
-# --------------------------------------------------------------------------- #
 def compare(boards):
     print(BOLD("Smart (MRV + propagation)  vs.  plain backtracking"))
     print(DIM("-" * 74))
-    hdr = f"{'puzzle':<12}{'clues':>6}{'smart bt':>11}{'plain bt':>12}" \
-          f"{'reduction':>12}{'smart ms':>11}"
+    hdr = f"{'puzzle':<12}{'clues':>6}{'smart bt':>11}{'plain bt':>12}"          f"{'reduction':>12}{'smart ms':>11}"
     print(hdr)
     print(DIM("-" * 74))
     for label, board in boards:
         _, ss, _ = s.solve_smart(board)
-        _, ns = s.solve_naive(board, cap=400_000)
+        _, ns = s.solve_naive(board, cap=10_000_000)
         clues = sum(1 for x in board if x)
         pbt = f">{ns.backtracks:,}" if ns.capped else f"{ns.backtracks:,}"
         if ns.capped:
@@ -178,18 +162,15 @@ def compare(boards):
             word, paint = "propagation", GREEN
         else:
             word, paint = f"{ns.backtracks / max(1, ss.backtracks):.0f}x", GREEN
-        # pad on plain text, then colorize, so alignment holds either way
+
         row = (f"{label:<12}{clues:>6}{ss.backtracks:>11,}{pbt:>12}"
                f"{paint(f'{word:>12}')}{ss.time_ms:>9.2f} ms")
         print(row)
     print(DIM("-" * 74))
-    print(DIM("plain backtracking is capped at 400,000 nodes; "
+    print(DIM("plain backtracking is capped at 10,000,000 nodes (~1 min); "
               "'gave up' means it hit the cap."))
 
 
-# --------------------------------------------------------------------------- #
-# Guided walkthrough
-# --------------------------------------------------------------------------- #
 def pause(auto):
     if auto:
         print()
@@ -241,7 +222,7 @@ def guided(auto=False, speed=0.03, animated=True):
     pause(auto)
 
     head(5, "Sanity checks")
-    inv = s.parse(s.PRESETS["easy"]); inv[1] = inv[0]  # force a duplicate
+    inv = s.parse(s.PRESETS["easy"]); inv[1] = inv[0]
     print("   invalid grid  -> " +
           (RED("flagged") if s.conflicts(inv) else "??"))
     empty = [0] * 81
@@ -256,9 +237,6 @@ def guided(auto=False, speed=0.03, animated=True):
     print()
 
 
-# --------------------------------------------------------------------------- #
-# Entry point
-# --------------------------------------------------------------------------- #
 def main(argv):
     global USE_COLOR
     args = list(argv)
