@@ -3,3 +3,20 @@ node_modules/
 __pycache__/
 *.pyc
 *.log
+
+# Large benchmark sets: several megabytes, fetched on demand by fetch_data.py.
+# The small sets (puzzles/) are committed; these are not.
+data/
+
+# Generated evaluation output. Reproduce with:
+#   python3 benchmark.py all && python3 figures.py
+results/*.json
+results/*.png
+results/*.pdf
+results/report_print.html
+
+# Scratch from drafting the report in Google Docs; not project artifacts.
+scratch/
+
+# The course handout, not our work.
+final.pdf

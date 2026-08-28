@@ -42,6 +42,23 @@ PEERS = _compute_peers()          # the 20 cells constrained with each cell
 _POPCOUNT = [bin(m).count("1") for m in range(ALL + 1)]
 
 
+def _compute_units():
+    """The 27 all-different units: 9 rows, 9 columns, 9 boxes."""
+    units = []
+    for r in range(9):
+        units.append(tuple(r * 9 + c for c in range(9)))
+    for c in range(9):
+        units.append(tuple(r * 9 + c for r in range(9)))
+    for br in range(0, 9, 3):
+        for bc in range(0, 9, 3):
+            units.append(tuple((br + dr) * 9 + (bc + dc)
+                               for dr in range(3) for dc in range(3)))
+    return units
+
+
+UNITS = _compute_units()          # the 27 constraint scopes
+
+
 # --------------------------------------------------------------------------- #
 # Parsing / formatting
 # --------------------------------------------------------------------------- #
@@ -63,6 +80,43 @@ def parse(source: str) -> list[int]:
 
 def to_string(board: list[int]) -> str:
     return "".join(str(v) for v in board)
+
+
+def load_many(path: str, limit: int | None = None,
+              sample_seed: int | None = None) -> list[list[int]]:
+    """Load a multi-puzzle file: one 81-character grid per line.
+
+    Lines beginning with '#' are treated as comments and skipped, as are lines
+    that do not contain exactly 81 grid characters. This is the format used by
+    the public benchmark sets (top95, the Kaggle export, the 17-clue
+    collection).
+
+    limit       : keep at most this many puzzles.
+    sample_seed : if given (with limit), take a random sample of that size with
+                  this seed instead of the first `limit` puzzles, so a subset is
+                  representative of the whole file and reproducible.
+    """
+    boards = []
+    with open(path, "r", encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            cells = [ch for ch in line if ch in "0123456789."]
+            if len(cells) != 81:
+                continue
+            boards.append([0 if ch in "0." else int(ch) for ch in cells])
+    if limit is not None and len(boards) > limit:
+        if sample_seed is not None:
+            boards = random.Random(sample_seed).sample(boards, limit)
+        else:
+            boards = boards[:limit]
+    return boards
+
+
+def clue_count(board: list[int]) -> int:
+    """Number of filled cells (givens) in a board."""
+    return sum(1 for v in board if v)
 
 
 def conflicts(board: list[int]) -> set[int]:
@@ -188,6 +242,136 @@ def solve_smart(board: list[int], record: bool = False, randomize: bool = False)
     st = Stats(solved, stats["back"], stats["nodes"],
                (time.perf_counter() - start) * 1000)
     return (val if solved else None), st, events
+
+
+# --------------------------------------------------------------------------- #
+# Strong solver:  MRV + forward checking + hidden singles, propagated to a
+# fixpoint before every branching decision.
+# --------------------------------------------------------------------------- #
+def _assign(i, v, val, cand):
+    """Assign v to cell i and prune v from every peer domain.
+
+    Returns False if the assignment is immediately inconsistent (the value is
+    not in i's domain, a peer already holds it, or a peer domain is wiped out).
+    """
+    bit = 1 << (v - 1)
+    if not (cand[i] & bit):
+        return False
+    val[i] = v
+    cand[i] = 0
+    for p in PEERS[i]:
+        if val[p] == v:
+            return False
+        if val[p] == 0:
+            if cand[p] & bit:
+                cand[p] &= ~bit
+                if cand[p] == 0:
+                    return False
+    return True
+
+
+def _propagate(val, cand):
+    """Run naked singles and hidden singles to a fixpoint.
+
+    naked single  -- a cell with exactly one candidate left must take it.
+    hidden single -- if a value can go in only one cell of a unit, it goes there,
+                     even when that cell still has several candidates.
+
+    Forward checking alone only ever reasons from an assignment outward to its
+    peers. Hidden singles reason in the other direction: from a *unit* inward to
+    the one cell that can still host a value. That inference is invisible to
+    forward checking, and it is what lets this solver place values that MRV
+    would otherwise have to guess.
+
+    Returns False if a contradiction is derived.
+    """
+    changed = True
+    while changed:
+        changed = False
+        for i in range(81):
+            if val[i] == 0:
+                m = cand[i]
+                if m == 0:
+                    return False
+                if _POPCOUNT[m] == 1:
+                    if not _assign(i, m.bit_length(), val, cand):
+                        return False
+                    changed = True
+        for unit in UNITS:
+            for v in range(1, 10):
+                bit = 1 << (v - 1)
+                spot = -1
+                count = 0
+                taken = False
+                for i in unit:
+                    if val[i] == v:
+                        taken = True
+                        break
+                    if val[i] == 0 and (cand[i] & bit):
+                        count += 1
+                        spot = i
+                        if count > 1:
+                            break
+                if taken:
+                    continue
+                if count == 0:
+                    return False          # no cell in this unit can hold v
+                if count == 1:
+                    if not _assign(spot, v, val, cand):
+                        return False
+                    changed = True
+    return True
+
+
+def solve_strong(board: list[int]):
+    """Return (solution_or_None, Stats).
+
+    Same MRV branching as solve_smart, but each node first propagates naked and
+    hidden singles to a fixpoint. Domains are copied per branch rather than
+    trail-undone, which costs a little memory per node and buys a much simpler
+    correctness argument.
+    """
+    stats = {"nodes": 0, "back": 0}
+    start = time.perf_counter()
+
+    val = [0] * 81
+    cand = [ALL] * 81
+    ok = True
+    for i, v in enumerate(board):
+        if v and not _assign(i, v, val, cand):
+            ok = False
+            break
+    if ok:
+        ok = _propagate(val, cand)
+
+    def bt(val, cand):
+        stats["nodes"] += 1
+        best, best_cnt = -1, 10
+        for i in range(81):
+            if val[i] == 0:
+                cnt = _POPCOUNT[cand[i]]
+                if cnt < best_cnt:
+                    best_cnt, best = cnt, i
+                    if cnt <= 1:
+                        break
+        if best == -1:
+            return val
+        mask = cand[best]
+        for v in range(1, 10):
+            if not (mask & (1 << (v - 1))):
+                continue
+            nval, ncand = val[:], cand[:]
+            if _assign(best, v, nval, ncand) and _propagate(nval, ncand):
+                got = bt(nval, ncand)
+                if got is not None:
+                    return got
+        stats["back"] += 1
+        return None
+
+    solution = bt(val, cand) if ok else None
+    st = Stats(solution is not None, stats["back"], stats["nodes"],
+               (time.perf_counter() - start) * 1000)
+    return solution, st
 
 
 # --------------------------------------------------------------------------- #
@@ -341,3 +525,31 @@ PRESETS = {
     "escargot": "100007090030020008009600500005300900010080002600004000300000010040000007007000300",
     "extreme":  "000000010400000000020000000000050407008000300001090000300400200050100000000806000",
 }
+
+# --------------------------------------------------------------------------- #
+# Difficulty rating
+# --------------------------------------------------------------------------- #
+# Thresholds are calibrated in the report from the distribution of smart-solver
+# backtracks over the public benchmark sets; see benchmark.py --calibrate.
+RATING_BANDS = [
+    (0, "trivial"),        # solved by propagation alone, no search
+    (10, "easy"),
+    (100, "medium"),
+    (1000, "hard"),
+    (float("inf"), "extreme"),
+]
+
+
+def rate_difficulty(board: list[int]) -> tuple[str, int, int]:
+    """Rate a puzzle by the search effort the smart solver actually needs.
+
+    Returns (label, backtracks, clues). Clue count alone is a weak proxy for
+    difficulty -- two puzzles with the same number of givens can differ by
+    orders of magnitude in search effort -- so the operational measure here is
+    the number of backtracks the MRV + forward-checking solver performs.
+    """
+    _, st, _ = solve_smart(board)
+    for threshold, label in RATING_BANDS:
+        if st.backtracks <= threshold:
+            return label, st.backtracks, clue_count(board)
+    return "extreme", st.backtracks, clue_count(board)

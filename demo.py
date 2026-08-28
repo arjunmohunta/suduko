@@ -10,11 +10,20 @@ Usage
   python3 demo.py compare [puzzle]    smart vs. naive on presets (or one puzzle)
   python3 demo.py generate <level>    make an easy | medium | hard puzzle
   python3 demo.py animate <puzzle>    animated step-by-step solve in the terminal
+  python3 demo.py rate <puzzle>       rate a puzzle by the search effort it needs
 
 <puzzle> may be a preset name (easy, escargot, extreme), an 81-character
-string, or a path to a text file.
+string, or a path to a text file (also accepts '.' for blanks).
 
-Options: --speed <sec>  (frame delay, default 0.03)   --no-color
+Options
+  --speed <sec>   animation frame delay (default 0.03)
+  --no-color      disable ANSI colour
+  --no-anim       skip animation in the guided walkthrough
+  --seed <int>    seed the generator, for reproducible puzzles
+  --cap <int>     node cap for the naive baseline in `compare` (default 400,000)
+
+Full evaluation (solve rate, dataset benchmarks, calibration):  benchmark.py
+Regression tests:                                              tests.py
 """
 import sys
 import time
@@ -160,7 +169,7 @@ def solve_one(board):
 # --------------------------------------------------------------------------- #
 # Comparison table
 # --------------------------------------------------------------------------- #
-def compare(boards):
+def compare(boards, cap=400_000):
     print(BOLD("Smart (MRV + propagation)  vs.  plain backtracking"))
     print(DIM("-" * 74))
     hdr = f"{'puzzle':<12}{'clues':>6}{'smart bt':>11}{'plain bt':>12}" \
@@ -169,7 +178,7 @@ def compare(boards):
     print(DIM("-" * 74))
     for label, board in boards:
         _, ss, _ = s.solve_smart(board)
-        _, ns = s.solve_naive(board, cap=400_000)
+        _, ns = s.solve_naive(board, cap=cap)
         clues = sum(1 for x in board if x)
         pbt = f">{ns.backtracks:,}" if ns.capped else f"{ns.backtracks:,}"
         if ns.capped:
@@ -183,7 +192,7 @@ def compare(boards):
                f"{paint(f'{word:>12}')}{ss.time_ms:>9.2f} ms")
         print(row)
     print(DIM("-" * 74))
-    print(DIM("plain backtracking is capped at 400,000 nodes; "
+    print(DIM(f"plain backtracking is capped at {cap:,} nodes; "
               "'gave up' means it hit the cap."))
 
 
@@ -276,6 +285,16 @@ def main(argv):
         i = args.index("--speed")
         speed = float(args[i + 1])
         del args[i:i + 2]
+    seed = None
+    if "--seed" in args:
+        i = args.index("--seed")
+        seed = int(args[i + 1])
+        del args[i:i + 2]
+    cap = 400_000
+    if "--cap" in args:
+        i = args.index("--cap")
+        cap = int(args[i + 1])
+        del args[i:i + 2]
 
     if not args:
         guided(auto=auto, speed=speed, animated=animated)
@@ -288,16 +307,28 @@ def main(argv):
         animate(resolve(args[1]), speed=speed)
     elif cmd == "generate":
         level = args[1] if len(args) > 1 else "medium"
-        puzzle, solution, givens = s.generate(level)
-        print(BOLD(f"Generated {level} puzzle") + DIM(f"  ({givens} clues)"))
+        puzzle, solution, givens = s.generate(level, seed=seed)
+        label, backtracks, _ = s.rate_difficulty(puzzle)
+        seed_note = f", seed {seed}" if seed is not None else ""
+        print(BOLD(f"Generated {level} puzzle") + DIM(f"  ({givens} clues{seed_note})"))
         print(render(puzzle, [v != 0 for v in puzzle]))
         print(DIM(f"\n81-char string: {s.to_string(puzzle)}"))
         print(DIM(f"unique solution: {s.count_solutions(puzzle, 2) == 1}"))
+        print(DIM(f"difficulty rating: {label}  "
+                  f"({backtracks:,} backtracks for the smart solver)"))
+    elif cmd == "rate":
+        board = resolve(args[1])
+        label, backtracks, clues = s.rate_difficulty(board)
+        print(render(board, [v != 0 for v in board]))
+        print(f"\n{BOLD(label)}   {clues} clues   "
+              f"{backtracks:,} backtracks for the smart solver")
+        print(DIM("rating is based on solver effort, not clue count; the bands are"))
+        print(DIM("trivial=0  easy<=10  medium<=100  hard<=1000  extreme>1000"))
     elif cmd == "compare":
         if len(args) > 1:
-            compare([(args[1][:12], resolve(args[1]))])
+            compare([(args[1][:12], resolve(args[1]))], cap=cap)
         else:
-            compare([(k, s.parse(v)) for k, v in s.PRESETS.items()])
+            compare([(k, s.parse(v)) for k, v in s.PRESETS.items()], cap=cap)
     else:
         print(__doc__)
 

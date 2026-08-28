@@ -33,8 +33,56 @@ python3 demo.py animate escargot         # animated step-by-step solve in the te
 python3 demo.py compare                  # smart vs. plain backtracking on all presets
 python3 demo.py generate hard            # make an easy | medium | hard puzzle
 
+python3 demo.py rate escargot            # rate a puzzle by the search effort it needs
+python3 demo.py generate hard --seed 5   # reproducible generation
+
 # options:  --speed <sec> (animation delay)   --no-color   --no-anim
+#           --seed <int> (generator seed)     --cap <int>  (baseline node cap)
 ```
+
+## Evaluation
+
+The full evaluation is a separate harness, so the reported numbers can be regenerated from
+scratch. Node and backtrack counts are exact and deterministic; wall-clock timings depend on
+machine load, which is why search effort is the primary metric.
+
+```bash
+python3 fetch_data.py        # download the public benchmark sets (~12 MB into data/)
+python3 benchmark.py all     # run every experiment, write results/results.json
+python3 figures.py           # regenerate every figure in the report from that JSON
+python3 tests.py             # 24-case regression suite
+python3 make_pdf.py          # render FINAL_REPORT.md -> CS175_Final_Report_Group3.pdf
+```
+
+Rendering the PDF needs two extra packages (the solvers themselves need nothing):
+
+```bash
+brew install pango
+pip3 install weasyprint markdown
+```
+
+Individual experiments:
+
+```bash
+python3 benchmark.py presets   --cap 10000000 --repeats 50
+python3 benchmark.py datasets  --limit 2000 --baseline-limit 50
+python3 benchmark.py generator --per-level 30
+python3 benchmark.py scaling   --limit 2000
+```
+
+### Benchmark sets
+
+| Set | Puzzles | Source |
+|---|---:|---|
+| `puzzles/top95.txt` | 95 | hard puzzles collected by Peter Norvig |
+| `puzzles/hardest11.txt` | 11 | "hardest" set collected by Peter Norvig |
+| `data/kaggle100k.txt` | 100,000 | export of the Kaggle "1 million Sudoku games" set |
+| `data/minimal17.txt` | 49,158 | minimal 17-clue puzzles (Royle's collection, extended) |
+| `data/top1465.txt` | 1,465 | hard puzzles ("top1465", magictour) |
+| `data/forum_hardest1106.txt` | 375 | forum-curated "hardest" collection |
+
+The small sets are committed. The large ones are fetched on demand by `fetch_data.py` and are
+gitignored.
 
 The guided walkthrough runs five beats: a hard puzzle, an animated solve, the
 smart-vs-plain comparison table, puzzle generation, and the sanity checks.
@@ -57,16 +105,20 @@ Domains are stored as 9-bit masks; peer sets are precomputed once.
 
 ## Representative results
 
-Produced by the solvers in this repo (`python3 demo.py compare`):
+Produced by `python3 benchmark.py presets`. Backtracks and nodes are exact; the baseline is
+capped, and a capped row is a lower bound rather than a measurement.
 
-| Puzzle          | Clues | Smart backtracks | Plain backtracks    |
-|-----------------|:-----:|:----------------:|:-------------------:|
-| Easy            |  30   |        0         |       4,157         |
-| AI Escargot     |  23   |       151        |       8,911         |
-| 17-clue minimal |  17   |      4,048       | exceeds node cap    |
+| Puzzle          | Clues | Smart backtracks | Smart nodes | Plain nodes | Node ratio |
+|-----------------|:-----:|:----------------:|:-----------:|:-----------:|:----------:|
+| Easy            |  30   |        0         |     52      |    4,209    |    81x     |
+| AI Escargot     |  23   |       151        |    210      |    8,970    |    43x     |
+| 17-clue minimal |  17   |      4,048       |   4,113     | hit the cap | lower bound |
 
-An easy puzzle solves with **0 backtracks** (pure propagation); the smart solver clears the
-17-clue puzzle in milliseconds while plain backtracking never finishes.
+An easy puzzle solves with **0 backtracks** — pure propagation, no search. The smart solver
+clears the 17-clue puzzle in milliseconds while plain backtracking exhausts its node budget
+without finding a solution.
+
+See [FINAL_REPORT.md](FINAL_REPORT.md) for solve rates over the full benchmark sets.
 
 ## The web demo
 
@@ -85,11 +137,21 @@ python3 -m http.server     # then visit http://localhost:8000
 
 ```
 sudoku-csp/
-├── sudoku.py            # core CSP library: solvers, uniqueness test, generator
+├── sudoku.py           # core CSP library: solvers, uniqueness test, generator, rating
 ├── demo.py             # command-line demo runner + terminal animation
+├── benchmark.py        # evaluation harness -> results/results.json
+├── figures.py          # regenerates every report figure from that JSON
+├── fetch_data.py       # downloads the public benchmark sets
+├── tests.py            # 24-case regression suite
 ├── index.html          # interactive web demo
-├── puzzles/
-│   └── escargot.txt    # example puzzle for file input
+├── puzzles/            # small committed puzzle sets
+│   ├── escargot.txt
+│   ├── top95.txt
+│   └── hardest11.txt
+├── data/               # large benchmark sets (fetched, gitignored)
+├── results/            # benchmark JSON + figures (generated, gitignored)
+├── FINAL_REPORT.md     # the written report (source of truth)
+├── make_pdf.py         # renders the report to a submission-ready PDF
 ├── README.md
 └── LICENSE
 ```
