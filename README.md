@@ -51,15 +51,17 @@ python3 fetch_data.py        # download the public benchmark sets (~12 MB into d
 python3 benchmark.py all     # run every experiment, write results/results.json
 python3 figures.py           # regenerate every figure in the report from that JSON
 python3 tests.py             # 24-case regression suite
-python3 make_pdf.py          # render FINAL_REPORT.md -> CS175_Final_Report_Group3.pdf
+python3 make_docx.py         # render FINAL_REPORT.md -> CS175_Final_Report_Group3.docx
 ```
 
-Rendering the PDF needs two extra packages (the solvers themselves need nothing):
+Rendering the report needs one extra package (the solvers themselves need nothing):
 
 ```bash
-brew install pango
-pip3 install weasyprint markdown
+pip3 install python-docx
 ```
+
+The `.docx` carries the heading styles, tables, monospaced pseudocode, superscripts, and the
+three figures already placed, so it converts cleanly when opened in Google Docs or Word.
 
 Individual experiments:
 
@@ -151,7 +153,7 @@ sudoku-csp/
 ├── data/               # large benchmark sets (fetched, gitignored)
 ├── results/            # benchmark JSON + figures (generated, gitignored)
 ├── FINAL_REPORT.md     # the written report (source of truth)
-├── make_pdf.py         # renders the report to a submission-ready PDF
+├── make_docx.py        # renders the report to a submission-ready .docx
 ├── README.md
 └── LICENSE
 ```
